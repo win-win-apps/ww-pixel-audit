@@ -1,0 +1,57 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+# IMPORTANT: client_id is intentionally blank.
+# Run `shopify app dev --reset` from this directory in Terminal once to register
+# the app on Partners and write the real client_id here. See HANDOFF.md and
+# BLOCKERS.md for the exact command and instructions.
+client_id = ""
+name = "WW Pixel Audit"
+application_url = ""
+embedded = true
+handle = "ww-pixel-audit"
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "win-win-ccae-dev.myshopify.com"
+
+[webhooks]
+api_version = "2025-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/data_request"
+  compliance_topics = [ "customers/data_request" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/redact"
+  compliance_topics = [ "customers/redact" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/shop/redact"
+  compliance_topics = [ "shop/redact" ]
+
+[access_scopes]
+# Scope rationale:
+# - read_themes: scan Online Store theme files for hardcoded gtag/fbq/_klOnsite
+# - read_script_tags, write_script_tags: read current state, future Module 2 install
+# - read_checkouts: detect legacy Additional Scripts content
+# - read_orders: revenue baseline for "estimated revenue at risk"
+# - read_analytics: future Module 3 Validator polls daily attribution
+scopes = "read_themes,read_script_tags,write_script_tags,read_checkouts,read_orders,read_analytics"
+
+[auth]
+redirect_urls = [
+  "/auth/callback",
+  "/auth/shopify/callback",
+  "/api/auth/callback",
+]
+
+[pos]
+embedded = false

@@ -1,0 +1,87 @@
+// WW Pixel Audit Prisma schema
+// sqlite for local dev (Omar's Mac), swap to postgres before fly.io ship (Shane).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+// shopify session store, unchanged from template
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// one row per shop, simple settings
+model ShopConfig {
+  id           Int       @id @default(autoincrement())
+  shop         String    @unique
+  plan         String    @default("free")
+  alertEmail   String?
+  lastScanAt   DateTime?
+  onboardedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+// one row per scan triggered by the merchant
+model ScanRun {
+  id           Int      @id @default(autoincrement())
+  shop         String
+  title        String
+  description  String?
+  status       String   @default("running")
+  totalFound   Int      @default(0)
+  brokenCount  Int      @default(0)
+  unknownCount Int      @default(0)
+  safeCount    Int      @default(0)
+  startedAt    DateTime @default(now())
+  finishedAt   DateTime?
+  errorMessage String?
+
+  trackers DetectedTracker[]
+
+  @@index([shop, startedAt])
+}
+
+// one row per tracker we found in a given scan
+model DetectedTracker {
+  id             Int      @id @default(autoincrement())
+  scanRunId      Int
+  scanRun        ScanRun  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  platform       String
+  detectedId     String?
+
+  source         String
+  sourceDetail   String?
+
+  status         String
+  reason         String
+  recommendation String?
+
+  createdAt      DateTime @default(now())
+
+  @@index([scanRunId])
+  @@index([platform])
+  @@index([status])
+}
