@@ -28,6 +28,7 @@ import { runScan } from "../services/scanner.server";
 import { estimateRevenueAtRisk } from "../services/revenue-estimator.server";
 import { markScanCompleted } from "../services/shop-config.server";
 import { redirectUrl } from "../services/embedded-redirect.server";
+import { validatePixelField, getFieldExample, type PixelField } from "../lib/pixel-format";
 
 interface PlatformRow {
   platform: string;
@@ -120,6 +121,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   for (const k of ["metaPixelId", "googleAdsId", "googleAdsLabel", "tiktokPixelId", "klaviyoCompanyId", "pinterestTagId"] as (keyof PixelSettings)[]) {
     const v = fd.get(k);
     if (typeof v === "string") partial[k] = v.trim();
+  }
+
+  // Belt-and-suspenders: validate non-empty fields server-side before we hit
+  // Shopify with a bad ID. Client validates first but a malicious post could
+  // bypass, so we re-check here.
+  const fmtErrors: string[] = [];
+  for (const [key, value] of Object.entries(partial)) {
+    if (!value || value === "disabled") continue; // empty / sentinel = skip
+    const result = validatePixelField(key as PixelField, value);
+    if (!result.ok) fmtErrors.push(`${key}: ${result.error}`);
+  }
+  if (fmtErrors.length > 0) {
+    return json({ ok: false, error: fmtErrors.join("; ") });
   }
 
   const result = await upsertWebPixel(admin, session.shop, partial);
@@ -251,6 +265,21 @@ function PlatformCard({ row, settings, submitting }: { row: PlatformRow; setting
   const [value, setValue] = useState(initialValue);
   const [labelValue, setLabelValue] = useState(settings.googleAdsLabel || "");
 
+  // Live format validation. Empty value -> no error displayed (we only nag once
+  // they've started typing). For Google Ads, the conversion label field is
+  // optional, so we only validate it if non-empty.
+  const valueValidation = value.trim()
+    ? validatePixelField(settingKey as PixelField, value)
+    : null;
+  const labelValidation = row.platform === "Google Ads" && labelValue.trim()
+    ? validatePixelField("googleAdsLabel", labelValue)
+    : null;
+
+  const formIsValid =
+    !!value.trim() &&
+    (valueValidation?.ok !== false) &&
+    (labelValidation?.ok !== false);
+
   const helpText = helpForPlatform(row.platform);
 
   // Decide the corner badge. Three states, one badge each:
@@ -298,8 +327,9 @@ function PlatformCard({ row, settings, submitting }: { row: PlatformRow; setting
             value={value}
             onChange={setValue}
             autoComplete="off"
-            placeholder={placeholderForKey(settingKey)}
+            placeholder={getFieldExample(settingKey as PixelField)}
             helpText={helpText}
+            error={valueValidation && !valueValidation.ok ? valueValidation.error : undefined}
           />
           {row.platform === "Google Ads" && (
             <TextField
@@ -308,14 +338,15 @@ function PlatformCard({ row, settings, submitting }: { row: PlatformRow; setting
               value={labelValue}
               onChange={setLabelValue}
               autoComplete="off"
-              placeholder="e.g. AbC-D_efGhIjK"
+              placeholder={getFieldExample("googleAdsLabel")}
               helpText="Optional. Found in Google Ads > Tools > Conversions > your purchase action."
+              error={labelValidation && !labelValidation.ok ? labelValidation.error : undefined}
             />
           )}
           <Divider />
           <InlineStack align="space-between" blockAlign="center">
             <Text as="p" variant="bodySm" tone="subdued">{footer}</Text>
-            <Button submit variant="primary" loading={submitting} disabled={!value.trim()}>
+            <Button submit variant="primary" loading={submitting} disabled={!formIsValid}>
               {row.installed ? "Update" : "Install"}
             </Button>
           </InlineStack>
@@ -333,17 +364,6 @@ function labelForKey(key: keyof PixelSettings): string {
     case "tiktokPixelId":    return "TikTok Pixel ID";
     case "klaviyoCompanyId": return "Klaviyo Company ID (Public API Key)";
     case "pinterestTagId":   return "Pinterest Tag ID";
-  }
-}
-
-function placeholderForKey(key: keyof PixelSettings): string {
-  switch (key) {
-    case "metaPixelId":      return "e.g. 1234567890123456";
-    case "googleAdsId":      return "e.g. AW-1234567890";
-    case "googleAdsLabel":   return "e.g. AbC-D_efGhIjK";
-    case "tiktokPixelId":    return "e.g. CXXXXXXXXXXXXXXXX";
-    case "klaviyoCompanyId": return "e.g. AbCdEf";
-    case "pinterestTagId":   return "e.g. 2612345678901";
   }
 }
 

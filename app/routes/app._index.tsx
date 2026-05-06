@@ -5,6 +5,7 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, useLoaderData, useNavigation } from "@remix-run/react";
+import { useState, useCallback } from "react";
 import {
   Page,
   Layout,
@@ -19,6 +20,8 @@ import {
   Banner,
   Divider,
   Tooltip,
+  Modal,
+  List,
 } from "@shopify/polaris";
 
 import { authenticate } from "../shopify.server";
@@ -416,20 +419,25 @@ function RevenueTile({
   );
 }
 
+type TrackerRow = {
+  id: number;
+  platform: string;
+  detectedId: string | null;
+  source: TrackerSource;
+  sourceDetail: string | null;
+  status: TrackerStatus;
+  reason: string;
+  recommendation: string | null;
+};
+
 function ReportTable({ trackers, scanId, hasPro: merchantHasPro }: {
   scanId: number;
   hasPro: boolean;
-  trackers: Array<{
-    id: number;
-    platform: string;
-    detectedId: string | null;
-    source: TrackerSource;
-    sourceDetail: string | null;
-    status: TrackerStatus;
-    reason: string;
-    recommendation: string | null;
-  }>;
+  trackers: TrackerRow[];
 }) {
+  const [openTrackerId, setOpenTrackerId] = useState<number | null>(null);
+  const closeModal = useCallback(() => setOpenTrackerId(null), []);
+
   // sort: broken first, then unknown, then safe
   const sortOrder: Record<TrackerStatus, number> = { broken_aug_26: 0, unknown: 1, safe: 2 };
   const sorted = [...trackers].sort((a, b) => {
@@ -438,6 +446,8 @@ function ReportTable({ trackers, scanId, hasPro: merchantHasPro }: {
     if (sa !== sb) return sa - sb;
     return a.platform.localeCompare(b.platform);
   });
+
+  const openTracker = sorted.find((t) => t.id === openTrackerId) ?? null;
 
   const rows = sorted.map((t) => [
     (
@@ -470,29 +480,141 @@ function ReportTable({ trackers, scanId, hasPro: merchantHasPro }: {
       </BlockStack>
     ),
     (
-      <FixCell
-        key={`f-${t.id}`}
-        platform={t.platform}
-        status={t.status}
-        hasPro={merchantHasPro}
-      />
+      <InlineStack key={`f-${t.id}`} gap="200" wrap={false} blockAlign="center">
+        <Button
+          variant="plain"
+          onClick={() => setOpenTrackerId(t.id)}
+        >
+          Details
+        </Button>
+        <FixCell
+          platform={t.platform}
+          status={t.status}
+          hasPro={merchantHasPro}
+        />
+      </InlineStack>
     ),
   ]);
 
   return (
-    <Card>
-      <BlockStack gap="300">
-        <InlineStack align="space-between" blockAlign="center">
-          <Text as="h2" variant="headingMd">Detected trackers</Text>
-          <Button url={`/api/scan/${scanId}/csv`} target="_top">Download CSV</Button>
-        </InlineStack>
-        <DataTable
-          columnContentTypes={["text", "text", "text", "text", "text"]}
-          headings={["Platform", "Where it lives", "Status", "What we recommend", "Action"]}
-          rows={rows}
-          verticalAlign="top"
-        />
+    <>
+      <Card>
+        <BlockStack gap="300">
+          <InlineStack align="space-between" blockAlign="center">
+            <Text as="h2" variant="headingMd">Detected trackers</Text>
+            <Button url={`/api/scan/${scanId}/csv`} target="_top">Download CSV</Button>
+          </InlineStack>
+          <DataTable
+            columnContentTypes={["text", "text", "text", "text", "text"]}
+            headings={["Platform", "Where it lives", "Status", "What we recommend", "Action"]}
+            rows={rows}
+            verticalAlign="top"
+          />
+        </BlockStack>
+      </Card>
+
+      {openTracker && (
+        <Modal
+          open={true}
+          onClose={closeModal}
+          title={openTracker.platform}
+          primaryAction={{ content: "Close", onAction: closeModal }}
+        >
+          <Modal.Section>
+            <BlockStack gap="400">
+              <InlineStack gap="200" blockAlign="center" wrap={true}>
+                <Badge tone={statusToBadgeTone(openTracker.status)}>
+                  {statusToLabel(openTracker.status)}
+                </Badge>
+                <Text as="span" variant="bodySm" tone="subdued">
+                  {sourceToLabel(openTracker.source)}
+                </Text>
+              </InlineStack>
+
+              <DetailRow label="Where it lives" value={openTracker.sourceDetail ?? "Not specified"} />
+              {openTracker.detectedId && (
+                <DetailRow label="Detected ID" value={openTracker.detectedId} mono />
+              )}
+
+              <Box>
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodySm" tone="subdued" fontWeight="semibold">
+                    What this means
+                  </Text>
+                  <Text as="p" variant="bodyMd">{openTracker.reason}</Text>
+                </BlockStack>
+              </Box>
+
+              {openTracker.recommendation && (
+                <Box>
+                  <BlockStack gap="100">
+                    <Text as="span" variant="bodySm" tone="subdued" fontWeight="semibold">
+                      What to do
+                    </Text>
+                    <Text as="p" variant="bodyMd">{openTracker.recommendation}</Text>
+                  </BlockStack>
+                </Box>
+              )}
+
+              {openTracker.status === "broken_aug_26" && (
+                <Banner tone="critical" title="Action needed before August 26, 2026">
+                  <p>
+                    This tracker stops firing on the upgraded checkout, thank-you, and order-status pages on August 26, 2026.
+                  </p>
+                  <List type="bullet">
+                    <List.Item>Move it into a Custom Pixel via Settings → Customer events.</List.Item>
+                    <List.Item>Or install the official sales channel app for the platform (Meta, Google, TikTok, Pinterest).</List.Item>
+                    <List.Item>Or upgrade to Pro and we register the Custom Pixel for you in one click.</List.Item>
+                  </List>
+                </Banner>
+              )}
+
+              {openTracker.status === "unknown" && (
+                <Banner tone="warning" title="Take 30 seconds to investigate">
+                  <p>
+                    This is a script tag we couldn't classify. Open the source URL in a new tab to see what it does. If it's a tracker, it likely needs to move to a Custom Pixel before Aug 26.
+                  </p>
+                </Banner>
+              )}
+
+              {openTracker.status === "safe" && (
+                <Banner tone="success" title="Already on the upgraded path">
+                  <p>
+                    This tracker keeps firing after August 26. No action needed.
+                  </p>
+                </Banner>
+              )}
+            </BlockStack>
+          </Modal.Section>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <Box>
+      <BlockStack gap="100">
+        <Text as="span" variant="bodySm" tone="subdued" fontWeight="semibold">{label}</Text>
+        {mono ? (
+          <Box background="bg-surface-secondary" padding="200" borderRadius="100">
+            <Text as="span" variant="bodyMd">
+              <code style={{ wordBreak: "break-all" }}>{value}</code>
+            </Text>
+          </Box>
+        ) : (
+          <Text as="p" variant="bodyMd">{value}</Text>
+        )}
       </BlockStack>
-    </Card>
+    </Box>
   );
 }

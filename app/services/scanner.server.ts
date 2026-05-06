@@ -278,6 +278,39 @@ async function scanThemeCode(admin: AdminApiContext): Promise<DetectedTrackerRow
   return results;
 }
 
+// Map our internal setting keys back to a human label. Mirrors the wizard form.
+const SETTING_KEY_TO_PLATFORM: Record<string, string> = {
+  metaPixelId: "Meta Pixel",
+  googleAdsId: "Google Ads",
+  tiktokPixelId: "TikTok Pixel",
+  klaviyoCompanyId: "Klaviyo",
+  pinterestTagId: "Pinterest Tag",
+};
+
+// Convert the raw JSON settings blob from a Custom Pixel into a friendly
+// "Forwards: Meta Pixel, Google Ads" string. The empty-string + "disabled"
+// sentinel is what the relay extension uses to mark a platform as off.
+function summarizeWebPixelSettings(settings: unknown): string | null {
+  if (typeof settings !== "string" || !settings.trim()) return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(settings);
+  } catch {
+    // Not JSON — could be plain text or a legacy format. Show a short preview.
+    return settings.slice(0, 60);
+  }
+  const enabled: string[] = [];
+  for (const [key, val] of Object.entries(parsed)) {
+    if (typeof val !== "string") continue;
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === "disabled") continue;
+    const label = SETTING_KEY_TO_PLATFORM[key];
+    if (label && !enabled.includes(label)) enabled.push(label);
+  }
+  if (enabled.length === 0) return "No platforms configured yet";
+  return `Forwards: ${enabled.join(", ")}`;
+}
+
 async function scanWebPixels(admin: AdminApiContext): Promise<DetectedTrackerRow[]> {
   const results: DetectedTrackerRow[] = [];
   try {
@@ -299,7 +332,7 @@ async function scanWebPixels(admin: AdminApiContext): Promise<DetectedTrackerRow
       platform: "Custom Pixel",
       detectedId: node.id || null,
       source: "custom_pixel",
-      sourceDetail: typeof node.settings === "string" ? node.settings.slice(0, 120) : null,
+      sourceDetail: summarizeWebPixelSettings(node.settings),
       status: "safe",
       reason: "A Custom Pixel is registered. Custom Pixels run inside the upgraded checkout sandbox.",
       recommendation: "Verify the pixel is firing your conversion events. Use the Validator (Pro) for daily reconciliation.",
