@@ -17,7 +17,6 @@ import {
   InlineStack,
   Banner,
   Divider,
-  EmptyState,
 } from "@shopify/polaris";
 import { useState } from "react";
 
@@ -32,11 +31,23 @@ import { redirectUrl } from "../services/embedded-redirect.server";
 
 interface PlatformRow {
   platform: string;
-  detectedId: string | null;
-  settingKey: keyof PixelSettings | null;
-  status: string;
-  installed: boolean;
+  settingKey: keyof PixelSettings;
+  detectedId: string | null;            // pre-fill from a broken scan row, if any
+  detectedAsBroken: boolean;            // we found the merchant's old install on the store
+  installed: boolean;                   // we already registered a Custom Pixel for this platform
 }
+
+// All five platforms our Web Pixel runtime supports. Always show one card per platform
+// so the merchant can install or update any of them whether or not the scan flagged
+// something. (If the scan didn't find an old install we still want them to be able to
+// add the Custom Pixel — that's the point of the wizard.)
+const SUPPORTED_PLATFORMS: { name: string; settingKey: keyof PixelSettings }[] = [
+  { name: "Meta Pixel",     settingKey: "metaPixelId" },
+  { name: "Google Ads",     settingKey: "googleAdsId" },
+  { name: "TikTok Pixel",   settingKey: "tiktokPixelId" },
+  { name: "Klaviyo Onsite", settingKey: "klaviyoCompanyId" },
+  { name: "Pinterest Tag",  settingKey: "pinterestTagId" },
+];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -47,7 +58,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return redirect(redirectUrl(request, "/app/upgrade", { reason: "fix" }));
   }
 
-  // most recent OK scan
   const lastScan = await prisma.scanRun.findFirst({
     where: { shop, status: "ok" },
     orderBy: { startedAt: "desc" },
@@ -56,24 +66,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const settings = await readPixelSettings(shop);
 
-  const rows: PlatformRow[] = [];
+  // Build a one-row-per-platform list. For each supported platform, look up the
+  // freshest broken-status detection in the last scan (if any) to pre-fill the ID.
+  const detectedById = new Map<keyof PixelSettings, { detectedId: string | null }>();
   if (lastScan) {
-    const seen = new Set<string>();
     for (const t of lastScan.trackers) {
       if (t.status !== "broken_aug_26") continue;
-      if (seen.has(t.platform)) continue;
-      seen.add(t.platform);
-      const settingKey = PLATFORM_TO_SETTING[t.platform] ?? null;
-      const installed = settingKey ? Boolean(settings[settingKey]) : false;
-      rows.push({
-        platform: t.platform,
-        detectedId: t.detectedId,
-        settingKey,
-        status: t.status,
-        installed,
-      });
+      const key = PLATFORM_TO_SETTING[t.platform];
+      if (!key) continue;
+      // First broken detection wins (scanner returns most-specific first)
+      if (!detectedById.has(key)) {
+        detectedById.set(key, { detectedId: t.detectedId });
+      }
     }
   }
+
+  const rows: PlatformRow[] = SUPPORTED_PLATFORMS.map(({ name, settingKey }) => {
+    const detected = detectedById.get(settingKey);
+    return {
+      platform: name,
+      settingKey,
+      detectedId: detected?.detectedId ?? null,
+      detectedAsBroken: Boolean(detected),
+      installed: Boolean(settings[settingKey]),
+    };
+  });
 
   return json({
     shop,
@@ -169,21 +186,8 @@ export default function FixPage() {
   const [searchParams] = useSearchParams();
   const justInstalled = searchParams.get("installed") === "1";
 
-  if (!hasScan) {
-    return (
-      <Page title="Migration Wizard" backAction={{ content: "Audit", url: "/app" }}>
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <EmptyState heading="Run a scan first" image="">
-                <p>Go back to the Audit page and run a scan. We'll bring you here automatically once we know what's broken.</p>
-              </EmptyState>
-            </Card>
-          </Layout.Section>
-        </Layout>
-      </Page>
-    );
-  }
+  const detectedCount = rows.filter((r) => r.detectedAsBroken).length;
+  const installedCount = rows.filter((r) => r.installed).length;
 
   return (
     <Page title="Migration Wizard" backAction={{ content: "Audit", url: "/app" }} subtitle="Install the fix in one click">
@@ -196,31 +200,33 @@ export default function FixPage() {
         {justInstalled && !actionData?.error && (
           <Layout.Section>
             <Banner tone="success" title="Pixel installed and re-scan complete">
-              The Custom Pixel is registered with Shopify and a fresh scan ran automatically. Any platform you just configured should now show up under "Already safe" on the Audit page.
+              The Custom Pixel is registered with Shopify and a fresh scan ran automatically. The platform you just configured should now show up under "Already safe" on the Audit page.
             </Banner>
           </Layout.Section>
         )}
         <Layout.Section>
           <Banner tone="info">
-            Each row below is a tracker we found that won't survive August 26. Enter the pixel ID, hit Install, and we'll register it as a Custom Pixel that runs in the upgraded checkout sandbox.
+            <p>
+              Pick any platform below. Paste the pixel ID, click Install, and we register it as a Custom Pixel that runs in the upgraded checkout sandbox.
+            </p>
+            {!hasScan && (
+              <p>
+                You haven't run an audit yet. Go to the Audit page and click <strong>Run my first scan</strong> first if you want us to pre-fill detected pixel IDs.
+              </p>
+            )}
+            {hasScan && detectedCount === 0 && installedCount === 0 && (
+              <p>
+                Heads up: the last scan didn't flag any broken trackers on this store. You can still install Custom Pixels here for any platform you want to add.
+              </p>
+            )}
           </Banner>
         </Layout.Section>
 
-        {rows.length === 0 ? (
-          <Layout.Section>
-            <Card>
-              <EmptyState heading="No broken trackers detected" image="">
-                <p>The last scan came back clean. Re-run the scan from the Audit page if you've changed anything since.</p>
-              </EmptyState>
-            </Card>
+        {rows.map((row) => (
+          <Layout.Section key={row.platform}>
+            <PlatformCard row={row} settings={settings} submitting={submitting} />
           </Layout.Section>
-        ) : (
-          rows.map((row) => (
-            <Layout.Section key={row.platform}>
-              <PlatformCard row={row} settings={settings} submitting={submitting} />
-            </Layout.Section>
-          ))
-        )}
+        ))}
 
         <Layout.Section>
           <Card>
@@ -239,28 +245,38 @@ export default function FixPage() {
 
 function PlatformCard({ row, settings, submitting }: { row: PlatformRow; settings: PixelSettings; submitting: boolean }) {
   const settingKey = row.settingKey;
-  const currentValue = settingKey ? settings[settingKey] || "" : "";
-  const [value, setValue] = useState(currentValue);
+  // Initial value: previously-saved setting (if installed) wins, then the scanner's
+  // detected ID (if detected as broken), then empty.
+  const initialValue = settings[settingKey] || row.detectedId || "";
+  const [value, setValue] = useState(initialValue);
   const [labelValue, setLabelValue] = useState(settings.googleAdsLabel || "");
 
-  if (!settingKey) {
-    // Platform we can't auto-fix yet (Snap, Bing, Reddit, etc.) — link to the right channel app.
-    return (
-      <Card>
-        <BlockStack gap="200">
-          <InlineStack align="space-between" blockAlign="center">
-            <Text as="h2" variant="headingMd">{row.platform}</Text>
-            <Badge tone="warning">Manual fix</Badge>
-          </InlineStack>
-          <Text as="p" variant="bodyMd" tone="subdued">
-            Auto-install for {row.platform} is coming soon. For now, the safest path is to install the official channel app for this platform from the Shopify App Store. Once installed it handles tracking automatically.
-          </Text>
-        </BlockStack>
-      </Card>
-    );
+  const helpText = helpForPlatform(row.platform);
+
+  // Decide the corner badge. Three states, one badge each:
+  //   1. Installed — we've already registered a Custom Pixel for this platform
+  //   2. Detected as broken — the audit found this platform's old install on the
+  //      store but we haven't yet installed a Custom Pixel
+  //   3. Available — nothing detected, nothing installed; the merchant can still
+  //      add a Custom Pixel for this platform if they want
+  let badge: { tone: "success" | "critical" | "info"; label: string };
+  if (row.installed) {
+    badge = { tone: "success", label: "Installed" };
+  } else if (row.detectedAsBroken) {
+    badge = { tone: "critical", label: "Will break Aug 26" };
+  } else {
+    badge = { tone: "info", label: "Available" };
   }
 
-  const helpText = helpForPlatform(row.platform);
+  // Footer caption mirrors the badge state
+  let footer: string;
+  if (row.installed) {
+    footer = "Saving will update the existing Custom Pixel.";
+  } else if (row.detectedAsBroken) {
+    footer = "We'll register this as a new Custom Pixel in your store.";
+  } else {
+    footer = "Add this platform to your store as a Custom Pixel.";
+  }
 
   return (
     <Card>
@@ -269,10 +285,12 @@ function PlatformCard({ row, settings, submitting }: { row: PlatformRow; setting
         <BlockStack gap="300">
           <InlineStack align="space-between" blockAlign="center">
             <Text as="h2" variant="headingMd">{row.platform}</Text>
-            {row.installed ? <Badge tone="success">Installed</Badge> : <Badge tone="critical">Will break Aug 26</Badge>}
+            <Badge tone={badge.tone}>{badge.label}</Badge>
           </InlineStack>
-          {row.detectedId && (
-            <Text as="p" variant="bodySm" tone="subdued">We detected ID: {row.detectedId} on your store. Confirm or replace below.</Text>
+          {row.detectedAsBroken && row.detectedId && (
+            <Text as="p" variant="bodySm" tone="subdued">
+              We detected ID <strong>{row.detectedId}</strong> on your store. Confirm or replace it below.
+            </Text>
           )}
           <TextField
             label={labelForKey(settingKey)}
@@ -296,9 +314,7 @@ function PlatformCard({ row, settings, submitting }: { row: PlatformRow; setting
           )}
           <Divider />
           <InlineStack align="space-between" blockAlign="center">
-            <Text as="p" variant="bodySm" tone="subdued">
-              {row.installed ? "Saving will update the existing Custom Pixel." : "We'll register this as a new Custom Pixel in your store."}
-            </Text>
+            <Text as="p" variant="bodySm" tone="subdued">{footer}</Text>
             <Button submit variant="primary" loading={submitting} disabled={!value.trim()}>
               {row.installed ? "Update" : "Install"}
             </Button>
