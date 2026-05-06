@@ -176,11 +176,11 @@ export default function AuditDashboard() {
           <Layout.Section>
             <Banner
               tone="info"
-              title="Pro can install the fix in one click"
+              title="Pro installs the fix in one click"
               action={{ content: "See plans", url: "/app/upgrade" }}
             >
               <p>
-                We can register a Custom Pixel for each of these {brokenCount} broken trackers so they keep firing after August 26. Pro starts at $29/mo with a 7-day free trial.
+                We can register a Custom Pixel for each of these {brokenCount} broken trackers so they keep firing after August 26. Pro is $29/mo, no trial, cancel any time.
               </p>
             </Banner>
           </Layout.Section>

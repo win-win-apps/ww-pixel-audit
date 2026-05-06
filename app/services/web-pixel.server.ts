@@ -22,15 +22,18 @@ const SETTING_KEYS: (keyof PixelSettings)[] = [
   "pinterestTagId",
 ];
 
+// Sentinel value sent for any field the merchant has not configured. Shopify's
+// web pixel settings schema rejects empty strings ("[X] - can't be blank"), so
+// we cannot send "" for unused platforms. The runtime in
+// extensions/ww-pixel-relay/src/index.js treats "disabled" as "platform off"
+// and skips initialization for that platform.
+export const PIXEL_DISABLED = "disabled";
+
 function clean(s: PixelSettings): Record<string, string> {
-  // Web pixel settings schema requires every defined field to be present in the
-  // input. We always send all 6 keys, defaulting to empty strings. The runtime
-  // (extensions/ww-pixel-relay/src/index.js) skips initialization for any field
-  // whose value is falsy, so empty strings are equivalent to "platform off".
   const out: Record<string, string> = {};
   for (const k of SETTING_KEYS) {
     const v = s[k];
-    out[k] = typeof v === "string" && v.trim() ? v.trim() : "";
+    out[k] = typeof v === "string" && v.trim() ? v.trim() : PIXEL_DISABLED;
   }
   return out;
 }

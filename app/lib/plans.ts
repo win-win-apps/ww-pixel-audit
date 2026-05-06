@@ -20,19 +20,22 @@ export interface PlanDef {
   trialDays: number;
 }
 
+// No free trial. Per learnings from the WW Store Credit app: free trials get
+// abused (install / use / uninstall / reinstall on another store). Free plan
+// + paid plan with no trial converts cleaner. Pay to unlock Pro immediately.
 export const PLANS: Record<PlanKey, PlanDef> = {
   pro: {
     key: "pro",
     name: "WW Pixel Audit Pro",
     amount: 29,
     currency: "USD",
-    trialDays: 7,
+    trialDays: 0,
   },
   agency: {
     key: "agency",
     name: "WW Pixel Audit Agency",
     amount: 79,
     currency: "USD",
-    trialDays: 7,
+    trialDays: 0,
   },
 };

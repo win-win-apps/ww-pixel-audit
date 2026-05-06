@@ -10,39 +10,45 @@
 
 import { register } from "@shopify/web-pixels-extension";
 
+// Sentinel that the WW Pixel Audit admin sends for any platform the merchant
+// has not configured. Shopify's web pixel settings schema rejects empty
+// strings, so the admin sends "disabled" instead. We treat that as "off".
+const DISABLED = "disabled";
+const isOn = (v) => typeof v === "string" && v.length > 0 && v !== DISABLED;
+
 register(({ analytics, browser, settings }) => {
   // -----------------------------
   // Meta Pixel
   // -----------------------------
-  if (settings.metaPixelId) {
+  if (isOn(settings.metaPixelId)) {
     initMetaPixel(settings.metaPixelId);
   }
 
   // -----------------------------
   // Google Ads
   // -----------------------------
-  if (settings.googleAdsId) {
+  if (isOn(settings.googleAdsId)) {
     initGoogleAds(settings.googleAdsId);
   }
 
   // -----------------------------
   // TikTok Pixel
   // -----------------------------
-  if (settings.tiktokPixelId) {
+  if (isOn(settings.tiktokPixelId)) {
     initTikTokPixel(settings.tiktokPixelId);
   }
 
   // -----------------------------
   // Klaviyo Onsite
   // -----------------------------
-  if (settings.klaviyoCompanyId) {
+  if (isOn(settings.klaviyoCompanyId)) {
     initKlaviyo(settings.klaviyoCompanyId);
   }
 
   // -----------------------------
   // Pinterest Tag
   // -----------------------------
-  if (settings.pinterestTagId) {
+  if (isOn(settings.pinterestTagId)) {
     initPinterestTag(settings.pinterestTagId);
   }
 
@@ -50,9 +56,9 @@ register(({ analytics, browser, settings }) => {
   // Subscribe to Customer Events
   // -----------------------------
   analytics.subscribe("page_viewed", () => {
-    if (settings.metaPixelId)     window.fbq && window.fbq("track", "PageView");
-    if (settings.tiktokPixelId)   window.ttq && window.ttq.track && window.ttq.track("Pageview");
-    if (settings.pinterestTagId)  window.pintrk && window.pintrk("track", "pagevisit");
+    if (isOn(settings.metaPixelId))     window.fbq && window.fbq("track", "PageView");
+    if (isOn(settings.tiktokPixelId))   window.ttq && window.ttq.track && window.ttq.track("Pageview");
+    if (isOn(settings.pinterestTagId))  window.pintrk && window.pintrk("track", "pagevisit");
   });
 
   analytics.subscribe("product_viewed", (event) => {
@@ -69,19 +75,19 @@ register(({ analytics, browser, settings }) => {
         currency,
       });
     }
-    if (settings.tiktokPixelId && window.ttq && window.ttq.track) {
+    if (isOn(settings.tiktokPixelId) && window.ttq && window.ttq.track) {
       window.ttq.track("ViewContent", {
         content_id: productId ? String(productId) : undefined,
         value: numberOrZero(price),
         currency,
       });
     }
-    if (settings.pinterestTagId && window.pintrk) {
+    if (isOn(settings.pinterestTagId) && window.pintrk) {
       window.pintrk("track", "pagevisit", {
         product_id: productId ? String(productId) : undefined,
       });
     }
-    if (settings.klaviyoCompanyId && window._learnq) {
+    if (isOn(settings.klaviyoCompanyId) && window._learnq) {
       window._learnq.push(["track", "Viewed Product", {
         ProductID: productId ? String(productId) : undefined,
         Price: numberOrZero(price),
@@ -104,13 +110,13 @@ register(({ analytics, browser, settings }) => {
         value, currency,
       });
     }
-    if (settings.tiktokPixelId && window.ttq && window.ttq.track) {
+    if (isOn(settings.tiktokPixelId) && window.ttq && window.ttq.track) {
       window.ttq.track("AddToCart", { value, currency });
     }
-    if (settings.pinterestTagId && window.pintrk) {
+    if (isOn(settings.pinterestTagId) && window.pintrk) {
       window.pintrk("track", "addtocart", { value, currency });
     }
-    if (settings.klaviyoCompanyId && window._learnq) {
+    if (isOn(settings.klaviyoCompanyId) && window._learnq) {
       window._learnq.push(["track", "Added to Cart", { Value: value }]);
     }
   });
@@ -125,7 +131,7 @@ register(({ analytics, browser, settings }) => {
     if (settings.metaPixelId && window.fbq) {
       window.fbq("track", "Purchase", { value, currency });
     }
-    if (settings.googleAdsId && window.gtag) {
+    if (isOn(settings.googleAdsId) && window.gtag) {
       const sendTo = settings.googleAdsLabel
         ? `${settings.googleAdsId}/${settings.googleAdsLabel}`
         : settings.googleAdsId;
@@ -136,13 +142,13 @@ register(({ analytics, browser, settings }) => {
         transaction_id: orderId ? String(orderId) : undefined,
       });
     }
-    if (settings.tiktokPixelId && window.ttq && window.ttq.track) {
+    if (isOn(settings.tiktokPixelId) && window.ttq && window.ttq.track) {
       window.ttq.track("CompletePayment", { value, currency });
     }
-    if (settings.pinterestTagId && window.pintrk) {
+    if (isOn(settings.pinterestTagId) && window.pintrk) {
       window.pintrk("track", "checkout", { value, currency, order_id: orderId });
     }
-    if (settings.klaviyoCompanyId && window._learnq) {
+    if (isOn(settings.klaviyoCompanyId) && window._learnq) {
       window._learnq.push(["track", "Placed Order", { OrderId: orderId, Value: value }]);
     }
   });
