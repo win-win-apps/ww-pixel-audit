@@ -102,23 +102,6 @@ export default function UpgradePage() {
                 "Migration Wizard",
                 "One-click Custom Pixel install: Meta, Google Ads, TikTok, Klaviyo, Pinterest",
                 "Auto re-scan to confirm each fix is live",
-                "Daily monitoring (coming soon)",
-              ]}
-            />
-            <PlanCard
-              title="Agency"
-              price={`$${PLANS.agency.amount}`}
-              cadence="per month"
-              isCurrent={plan === "agency"}
-              isAvailable
-              ctaLabelDefault="Choose Agency"
-              onUpgrade={handleUpgrade}
-              features={[
-                "Everything in Pro",
-                "Validator (compares ad-platform vs Shopify orders daily)",
-                "Multi-store dashboard",
-                "First 5 stores included",
-                "$5/mo per additional store",
               ]}
             />
           </InlineStack>
@@ -140,7 +123,6 @@ export default function UpgradePage() {
 }
 
 function planSubtitle(plan: Plan): string {
-  if (plan === "agency") return "You're on Agency.";
   if (plan === "pro") return "You're on Pro.";
   return "Free forever, upgrade for the one-click fix.";
 }

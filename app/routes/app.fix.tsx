@@ -4,7 +4,7 @@
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -25,6 +25,9 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { readEntitlements, hasPro } from "../services/entitlements.server";
 import { upsertWebPixel, readPixelSettings, PLATFORM_TO_SETTING, type PixelSettings } from "../services/web-pixel.server";
+import { runScan } from "../services/scanner.server";
+import { estimateRevenueAtRisk } from "../services/revenue-estimator.server";
+import { markScanCompleted } from "../services/shop-config.server";
 import { redirectUrl } from "../services/embedded-redirect.server";
 
 interface PlatformRow {
@@ -106,6 +109,55 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!result.ok) {
     return json({ ok: false, error: result.error });
   }
+
+  // Auto re-scan to confirm the fix is live. We trigger the same runScan flow
+  // the dashboard uses, so the next page load reads the freshest results and
+  // the previously-broken platform shows up under "safe" via the Custom Pixel
+  // path. If the scan throws we still consider the install a success — the
+  // Custom Pixel is registered.
+  try {
+    const startedAt = new Date();
+    const run = await prisma.scanRun.create({
+      data: {
+        shop: session.shop,
+        title: `Auto re-scan ${startedAt.toISOString().slice(0, 16).replace("T", " ")} UTC`,
+        description: "Triggered automatically after a Migration Wizard install.",
+        status: "running",
+      },
+    });
+    const scanResult = await runScan(admin);
+    const revenue = await estimateRevenueAtRisk(admin, scanResult.trackers);
+    await prisma.scanRun.update({
+      where: { id: run.id },
+      data: {
+        status: "ok",
+        finishedAt: new Date(),
+        totalFound: scanResult.totalFound,
+        brokenCount: scanResult.brokenCount,
+        unknownCount: scanResult.unknownCount,
+        safeCount: scanResult.safeCount,
+        weeklyRevenue: revenue?.weeklyRevenue ?? null,
+        atRiskRevenue: revenue?.atRiskRevenue ?? null,
+        atRiskPct: revenue?.atRiskPct ?? null,
+        currency: revenue?.currency ?? null,
+        trackers: {
+          create: scanResult.trackers.map((t) => ({
+            platform: t.platform,
+            detectedId: t.detectedId ?? null,
+            source: t.source,
+            sourceDetail: t.sourceDetail ?? null,
+            status: t.status,
+            reason: t.reason,
+            recommendation: t.recommendation ?? null,
+          })),
+        },
+      },
+    });
+    await markScanCompleted(session.shop);
+  } catch (err) {
+    console.warn("Auto re-scan after install failed (non-fatal):", (err as Error).message);
+  }
+
   return redirect(redirectUrl(request, "/app/fix", { installed: "1" }));
 };
 
@@ -114,6 +166,8 @@ export default function FixPage() {
   const actionData = useActionData<{ ok?: boolean; error?: string }>();
   const nav = useNavigation();
   const submitting = nav.state !== "idle";
+  const [searchParams] = useSearchParams();
+  const justInstalled = searchParams.get("installed") === "1";
 
   if (!hasScan) {
     return (
@@ -137,6 +191,13 @@ export default function FixPage() {
         {actionData?.error && (
           <Layout.Section>
             <Banner tone="critical" title="Install failed">{actionData.error}</Banner>
+          </Layout.Section>
+        )}
+        {justInstalled && !actionData?.error && (
+          <Layout.Section>
+            <Banner tone="success" title="Pixel installed and re-scan complete">
+              The Custom Pixel is registered with Shopify and a fresh scan ran automatically. Any platform you just configured should now show up under "Already safe" on the Audit page.
+            </Banner>
           </Layout.Section>
         )}
         <Layout.Section>

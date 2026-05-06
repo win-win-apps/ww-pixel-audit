@@ -1,94 +1,69 @@
-// Settings — V1 only has the alert email and a placeholder for the upgrade CTA.
+// Settings page. Currently informational only — no toggles, no email field.
+// (We removed the alertEmail input because there is no email-sending
+// infrastructure behind it; surfacing the field would have implied
+// functionality we don't ship.)
 
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
 import {
   Page,
   Layout,
   Card,
   BlockStack,
   Text,
-  TextField,
   Button,
-  Banner,
-  FormLayout,
 } from "@shopify/polaris";
-import { useState } from "react";
 
 import { authenticate } from "../shopify.server";
-import { getOrCreateShopConfig, updateShopConfig } from "../services/shop-config.server";
-import { redirectUrl } from "../services/embedded-redirect.server";
+import { readEntitlements } from "../services/entitlements.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const cfg = await getOrCreateShopConfig(session.shop);
-  return json({ cfg });
-};
-
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const fd = await request.formData();
-  const alertEmail = String(fd.get("alertEmail") || "").trim();
-  await updateShopConfig(session.shop, {
-    alertEmail: alertEmail.length > 0 ? alertEmail : null,
-  });
-  return redirect(redirectUrl(request, "/app/settings", { saved: "1" }));
+  const { admin, session } = await authenticate.admin(request);
+  const ent = await readEntitlements(admin, session.shop);
+  return json({ shop: session.shop, plan: ent.plan });
 };
 
 export default function SettingsPage() {
-  const { cfg } = useLoaderData<typeof loader>();
-  const nav = useNavigation();
-  const isSaving = nav.state !== "idle";
-
-  const [email, setEmail] = useState(cfg.alertEmail || "");
-  const [searchParams] = useSearchParams();
-  const showSaved = searchParams.get("saved") === "1";
+  const { shop, plan } = useLoaderData<typeof loader>();
+  const isPro = plan === "pro" || plan === "agency";
 
   return (
     <Page title="Settings" backAction={{ content: "Audit", url: "/app" }}>
       <Layout>
-        {showSaved && (
-          <Layout.Section>
-            <Banner tone="success" title="Settings saved." />
-          </Layout.Section>
-        )}
         <Layout.Section>
           <Card>
-            <Form method="post">
-              <FormLayout>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">Alert email</Text>
-                  <Text as="p" variant="bodyMd" tone="subdued">
-                    Optional. We will email this address when a scheduled scan finds new tracker problems. V1 leaves scheduled scans off, this is for the upcoming Pro tier.
-                  </Text>
-                </BlockStack>
-                <TextField
-                  label="Email"
-                  type="email"
-                  name="alertEmail"
-                  value={email}
-                  onChange={setEmail}
-                  autoComplete="email"
-                  helpText="We never share this address."
-                />
-                <div>
-                  <Button submit variant="primary" loading={isSaving}>Save settings</Button>
-                </div>
-              </FormLayout>
-            </Form>
+            <BlockStack gap="200">
+              <Text as="h2" variant="headingMd">Connected store</Text>
+              <Text as="p" variant="bodyMd">{shop}</Text>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingMd">Plan</Text>
+              <Text as="p" variant="bodyMd">
+                You're on the {isPro ? "Pro" : "Free"} tier. {isPro
+                  ? "Pro unlocks the Migration Wizard that installs a Custom Pixel for every broken tracker."
+                  : "Free includes unlimited audits, the Migration Readiness Report, scan history, and CSV export."}
+              </Text>
+              <div>
+                <Button url="/app/upgrade" variant={isPro ? "secondary" : "primary"}>
+                  {isPro ? "Manage plan" : "See Pro"}
+                </Button>
+              </div>
+            </BlockStack>
           </Card>
         </Layout.Section>
 
         <Layout.Section>
           <Card>
             <BlockStack gap="200">
-              <Text as="h2" variant="headingMd">Plan</Text>
-              <Text as="p" variant="bodyMd">
-                You're on the Free tier. The Free tier includes unlimited audits and the Migration Readiness Report.
-              </Text>
+              <Text as="h2" variant="headingMd">Uninstall</Text>
               <Text as="p" variant="bodyMd" tone="subdued">
-                Pro ($29/mo) and Agency ($79/mo) tiers are launching shortly. Pro adds the Migration Wizard, which installs the right Custom Pixel for each broken tracker. Agency adds the Validator and a multi-store dashboard.
+                Uninstall from Shopify admin → Apps. We delete your scan history, the Web Pixel we installed, and your shop config automatically via the GDPR webhooks.
               </Text>
             </BlockStack>
           </Card>
