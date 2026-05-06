@@ -29,6 +29,7 @@ import { estimateRevenueAtRisk } from "../services/revenue-estimator.server";
 import { markScanCompleted } from "../services/shop-config.server";
 import { redirectUrl } from "../services/embedded-redirect.server";
 import { validatePixelField, getFieldExample, type PixelField } from "../lib/pixel-format";
+import { PlatformIcon } from "../components/PlatformIcon";
 
 interface PlatformRow {
   platform: string;
@@ -313,7 +314,10 @@ function PlatformCard({ row, settings, submitting }: { row: PlatformRow; setting
         <input type="hidden" name="intent" value="install" />
         <BlockStack gap="300">
           <InlineStack align="space-between" blockAlign="center">
-            <Text as="h2" variant="headingMd">{row.platform}</Text>
+            <InlineStack gap="200" blockAlign="center" wrap={false}>
+              <PlatformIcon platform={row.platform} size={24} />
+              <Text as="h2" variant="headingMd">{row.platform}</Text>
+            </InlineStack>
             <Badge tone={badge.tone}>{badge.label}</Badge>
           </InlineStack>
           {row.detectedAsBroken && row.detectedId && (

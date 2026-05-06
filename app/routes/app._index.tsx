@@ -33,6 +33,7 @@ import { readEntitlements } from "../services/entitlements.server";
 import { hasPro, type Plan } from "../lib/plans";
 import { statusToBadgeTone, statusToLabel, sourceToLabel, type TrackerStatus, type TrackerSource } from "../lib/tracker-labels";
 import { redirectUrl } from "../services/embedded-redirect.server";
+import { PlatformIcon } from "../components/PlatformIcon";
 
 const DEADLINE_LABEL = "August 26, 2026";
 const DEADLINE_ISO = "2026-08-26T00:00:00Z";
@@ -452,13 +453,16 @@ function ReportTable({ trackers, scanId, hasPro: merchantHasPro }: {
   const rows = sorted.map((t) => [
     (
       <BlockStack gap="100" key={`p-${t.id}`}>
-        <Button
-          variant="plain"
-          textAlign="left"
-          onClick={() => setOpenTrackerId(t.id)}
-        >
-          {t.platform}
-        </Button>
+        <InlineStack gap="200" blockAlign="center" wrap={false}>
+          <PlatformIcon platform={t.platform} size={20} />
+          <Button
+            variant="plain"
+            textAlign="left"
+            onClick={() => setOpenTrackerId(t.id)}
+          >
+            {t.platform}
+          </Button>
+        </InlineStack>
         {t.detectedId && (
           <Text as="span" variant="bodySm" tone="subdued">ID: {t.detectedId}</Text>
         )}
@@ -528,7 +532,8 @@ function ReportTable({ trackers, scanId, hasPro: merchantHasPro }: {
         >
           <Modal.Section>
             <BlockStack gap="400">
-              <InlineStack gap="200" blockAlign="center" wrap={true}>
+              <InlineStack gap="300" blockAlign="center" wrap={true}>
+                <PlatformIcon platform={openTracker.platform} size={28} />
                 <Badge tone={statusToBadgeTone(openTracker.status)}>
                   {statusToLabel(openTracker.status)}
                 </Badge>
@@ -607,18 +612,28 @@ function DetailRow({
   value: string;
   mono?: boolean;
 }) {
+  // overflowWrap:anywhere makes long unbroken strings (raw JSON, IDs, urls)
+  // break instead of stretching the modal off the right edge.
+  const wrapStyle: React.CSSProperties = {
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+  };
   return (
     <Box>
       <BlockStack gap="100">
         <Text as="span" variant="bodySm" tone="subdued" fontWeight="semibold">{label}</Text>
         {mono ? (
           <Box background="bg-surface-secondary" padding="200" borderRadius="100">
-            <Text as="span" variant="bodyMd">
-              <code style={{ wordBreak: "break-all" }}>{value}</code>
-            </Text>
+            <div style={wrapStyle}>
+              <Text as="span" variant="bodyMd">
+                <code>{value}</code>
+              </Text>
+            </div>
           </Box>
         ) : (
-          <Text as="p" variant="bodyMd">{value}</Text>
+          <div style={wrapStyle}>
+            <Text as="p" variant="bodyMd">{value}</Text>
+          </div>
         )}
       </BlockStack>
     </Box>
