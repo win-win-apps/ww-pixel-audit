@@ -54,6 +54,14 @@ model ScanRun {
   brokenCount  Int      @default(0)
   unknownCount Int      @default(0)
   safeCount    Int      @default(0)
+
+  // Revenue at risk estimate, computed from last 7 days of orders.
+  // Currency is what the shop reports its orders in; we don't FX-convert.
+  weeklyRevenue       Float?  // total in last 7 days
+  atRiskRevenue       Float?  // portion attributed to channels with broken trackers
+  atRiskPct           Int?    // 0..100, atRiskRevenue / weeklyRevenue
+  currency            String? // e.g. "USD"
+
   startedAt    DateTime @default(now())
   finishedAt   DateTime?
   errorMessage String?

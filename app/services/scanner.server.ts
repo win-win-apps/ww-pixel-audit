@@ -160,8 +160,8 @@ async function scanScriptTags(admin: AdminApiContext): Promise<DetectedTrackerRo
             source: "script_tag",
             sourceDetail: src,
             status: "broken_aug_26",
-            reason: `${fp.platform} loaded via script tag, which does not fire on the upgraded checkout, thank-you, or order-status pages.`,
-            recommendation: `Move ${fp.platform} into a Custom Pixel (Shopify admin Customer Events) before August 26, 2026.`,
+            reason: `${fp.platform} is running as a script tag. Script tags stop working on the upgraded checkout, thank-you, and order-status pages.`,
+            recommendation: `Move ${fp.platform} into a Custom Pixel via Shopify admin > Settings > Customer events before August 26.`,
           });
           break;
         }
@@ -260,8 +260,8 @@ async function scanThemeCode(admin: AdminApiContext): Promise<DetectedTrackerRow
             source: "theme_code",
             sourceDetail: filePath,
             status: "broken_aug_26",
-            reason: `${fp.platform} snippet found in ${filePath}. Code in your theme cannot fire on the upgraded checkout, thank-you, or order-status pages.`,
-            recommendation: `Move ${fp.platform} into a Custom Pixel via Shopify admin > Customer events. The official Shopify ${fp.platform.includes("Meta") ? "Facebook & Instagram" : fp.platform.includes("Google") ? "Google & YouTube" : ""} channel app handles this automatically.`.trim(),
+            reason: `${fp.platform} is hardcoded in your theme file ${filePath}. Code in your theme files can't fire on the upgraded checkout, thank-you, or order-status pages.`,
+            recommendation: `Move ${fp.platform} into a Custom Pixel via Shopify admin > Settings > Customer events.${fp.platform.includes("Meta") ? " The official Facebook & Instagram channel app handles this for you if you connect it." : fp.platform.includes("Google") ? " The official Google & YouTube channel app handles this for you if you connect it." : ""}`,
           });
         }
       }
