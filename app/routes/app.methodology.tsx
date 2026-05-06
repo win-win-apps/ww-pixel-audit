@@ -82,7 +82,7 @@ export default function MethodologyPage() {
                   />
                   <SourceRow
                     title="Theme code"
-                    detail="We open your published theme's main layout plus seven common tracking-snippet paths and look for direct calls to fbq, gtag, ttq, _learnq, pintrk, snaptr, uetq, and rdt."
+                    detail="We open your theme's layout files plus 23 known tracking-snippet paths and look for direct calls to fbq, gtag, ttq, _learnq, pintrk, snaptr, uetq, and rdt. If those come back empty, we widen the scan: every .liquid file in snippets, sections, and layout whose filename hints at tracking gets read too."
                     breakStatus="Will break"
                   />
                   <SourceRow

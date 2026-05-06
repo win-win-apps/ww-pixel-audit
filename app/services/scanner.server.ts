@@ -67,17 +67,48 @@ const SCRIPT_TAG_FINGERPRINTS: Array<{ platform: string; hostMatch: RegExp }> = 
   { platform: "Reddit Pixel",       hostMatch: /redditstatic\.com.*conversion/ },
 ];
 
-// theme files to scan (most stores keep tracking in these)
+// Tier 1: known filenames where tracking pixels conventionally live. This
+// covers the cases produced by Shopify's "Additional Scripts" feature, every
+// official platform tutorial, and the snippet names agencies tend to use.
+// If tier 1 finds at least one broken theme row, we stop here.
 const THEME_FILES_TO_CHECK = [
+  // layout
   "layout/theme.liquid",
+  "layout/checkout.liquid",
+  // platform-named snippets
   "snippets/google-tag-manager.liquid",
   "snippets/google-analytics.liquid",
+  "snippets/gtm.liquid",
+  "snippets/gtag.liquid",
   "snippets/facebook-pixel.liquid",
+  "snippets/meta-pixel.liquid",
+  "snippets/tiktok-pixel.liquid",
+  "snippets/pinterest-tag.liquid",
+  "snippets/klaviyo.liquid",
+  "snippets/klaviyo-onsite.liquid",
+  // generic-named snippets
   "snippets/tracking.liquid",
   "snippets/analytics.liquid",
   "snippets/head-tracking.liquid",
   "snippets/header-tracking.liquid",
+  "snippets/marketing-pixels.liquid",
+  "snippets/conversion-tracking.liquid",
+  "snippets/head-scripts.liquid",
+  "snippets/scripts.liquid",
+  "snippets/pixels.liquid",
+  // section/template hot spots
+  "sections/header.liquid",
+  "templates/page.contact.liquid",
+  "templates/customers/order.liquid",
 ];
+
+// Tier 2 (adaptive widening): only triggered when tier 1 finds nothing. Lists
+// theme file metadata cheaply, then fetches content only for the small subset
+// of .liquid files in snippets/sections/layout whose filename suggests
+// tracking. Bounded by THEME_WIDE_SCAN_MAX_FILES so a worst-case theme can't
+// blow the API cost budget.
+const THEME_WIDE_SCAN_MAX_FILES = 12;
+const TRACKING_FILENAME_HINT = /(?:track|pixel|analytic|conversion|fb|meta|gtag|gtm|tag.?manager|google|tiktok|klaviyo|pinterest|snap|reddit|bing|uet)/i;
 
 // known sales channels we treat as "safe"
 const SAFE_SALES_CHANNELS: Record<string, string> = {
@@ -208,6 +239,100 @@ function extractIdFromUrl(src: string): string | null {
   return null;
 }
 
+// Fetch the content of one theme file and run all THEME_FINGERPRINTS against
+// it, pushing any matches into `results`. Returns the number of broken_aug_26
+// rows pushed so the caller can decide whether to widen the scan.
+async function scanOneThemeFile(
+  admin: AdminApiContext,
+  themeId: string,
+  filePath: string,
+  results: DetectedTrackerRow[],
+): Promise<number> {
+  const fileRes = await admin.graphql(
+    `#graphql
+      query ThemeFile($id: ID!, $filename: String!) {
+        theme(id: $id) {
+          files(first: 1, filenames: [$filename]) {
+            nodes {
+              filename
+              body { ... on OnlineStoreThemeFileBodyText { content } }
+            }
+          }
+        }
+      }
+    `,
+    { variables: { id: themeId, filename: filePath } },
+  );
+  const fileBody = await fileRes.json() as any;
+  const node = fileBody?.data?.theme?.files?.nodes?.[0];
+  const content: string = node?.body?.content || "";
+  if (!content) return 0;
+
+  let pushed = 0;
+  for (const fp of THEME_FINGERPRINTS) {
+    if (fp.pattern.test(content)) {
+      let detectedId: string | null = null;
+      if (fp.idPattern) {
+        const m = content.match(fp.idPattern);
+        if (m) detectedId = m[1];
+      }
+      results.push({
+        platform: fp.platform,
+        detectedId,
+        source: "theme_code",
+        sourceDetail: filePath,
+        status: "broken_aug_26",
+        reason: `${fp.platform} is hardcoded in your theme file ${filePath}. Code in your theme files can't fire on the upgraded checkout, thank-you, or order-status pages.`,
+        recommendation: `Move ${fp.platform} into a Custom Pixel via Shopify admin > Settings > Customer events.${fp.platform.includes("Meta") ? " The official Facebook & Instagram channel app handles this for you if you connect it." : fp.platform.includes("Google") ? " The official Google & YouTube channel app handles this for you if you connect it." : ""}`,
+      });
+      pushed++;
+    }
+  }
+  return pushed;
+}
+
+// List every file in the theme (metadata only, no body) and pick the .liquid
+// files in the directories where pixels are most likely to live, whose
+// filename suggests tracking. Used as a tier-2 fallback when the static
+// filename list found nothing.
+async function listSuspiciousLiquidFiles(
+  admin: AdminApiContext,
+  themeId: string,
+  alreadyChecked: Set<string>,
+): Promise<string[]> {
+  const res = await admin.graphql(
+    `#graphql
+      query AllThemeFiles($id: ID!) {
+        theme(id: $id) {
+          files(first: 250) {
+            nodes { filename contentType }
+          }
+        }
+      }
+    `,
+    { variables: { id: themeId } },
+  );
+  const body = await res.json() as any;
+  const nodes: Array<{ filename: string; contentType: string }> =
+    body?.data?.theme?.files?.nodes ?? [];
+
+  const candidates: string[] = [];
+  for (const n of nodes) {
+    const fn = n?.filename || "";
+    if (alreadyChecked.has(fn)) continue;
+    if (!fn.endsWith(".liquid")) continue;
+    if (
+      !fn.startsWith("snippets/") &&
+      !fn.startsWith("sections/") &&
+      !fn.startsWith("layout/")
+    ) continue;
+    if (!TRACKING_FILENAME_HINT.test(fn)) continue;
+    candidates.push(fn);
+    if (candidates.length >= THEME_WIDE_SCAN_MAX_FILES) break;
+  }
+  return candidates;
+}
+
 async function scanThemeCode(admin: AdminApiContext): Promise<DetectedTrackerRow[]> {
   const results: DetectedTrackerRow[] = [];
   try {
@@ -225,45 +350,20 @@ async function scanThemeCode(admin: AdminApiContext): Promise<DetectedTrackerRow
     const themeId: string | undefined = themesBody?.data?.themes?.nodes?.[0]?.id;
     if (!themeId) return results;
 
-    // fetch the contents of each candidate theme file
+    // Tier 1: fetch the contents of each known candidate theme file.
+    let tier1Hits = 0;
     for (const filePath of THEME_FILES_TO_CHECK) {
-      const fileRes = await admin.graphql(
-        `#graphql
-          query ThemeFile($id: ID!, $filename: String!) {
-            theme(id: $id) {
-              files(first: 1, filenames: [$filename]) {
-                nodes {
-                  filename
-                  body { ... on OnlineStoreThemeFileBodyText { content } }
-                }
-              }
-            }
-          }
-        `,
-        { variables: { id: themeId, filename: filePath } },
-      );
-      const fileBody = await fileRes.json() as any;
-      const node = fileBody?.data?.theme?.files?.nodes?.[0];
-      const content: string = node?.body?.content || "";
-      if (!content) continue;
+      tier1Hits += await scanOneThemeFile(admin, themeId, filePath, results);
+    }
 
-      for (const fp of THEME_FINGERPRINTS) {
-        if (fp.pattern.test(content)) {
-          let detectedId: string | null = null;
-          if (fp.idPattern) {
-            const m = content.match(fp.idPattern);
-            if (m) detectedId = m[1];
-          }
-          results.push({
-            platform: fp.platform,
-            detectedId,
-            source: "theme_code",
-            sourceDetail: filePath,
-            status: "broken_aug_26",
-            reason: `${fp.platform} is hardcoded in your theme file ${filePath}. Code in your theme files can't fire on the upgraded checkout, thank-you, or order-status pages.`,
-            recommendation: `Move ${fp.platform} into a Custom Pixel via Shopify admin > Settings > Customer events.${fp.platform.includes("Meta") ? " The official Facebook & Instagram channel app handles this for you if you connect it." : fp.platform.includes("Google") ? " The official Google & YouTube channel app handles this for you if you connect it." : ""}`,
-          });
-        }
+    // Tier 2: only if tier 1 found nothing broken, do a smart wide scan.
+    // Lists all files cheaply, filters by directory + filename hint, then
+    // fetches content for at most THEME_WIDE_SCAN_MAX_FILES of them.
+    if (tier1Hits === 0) {
+      const alreadyChecked = new Set(THEME_FILES_TO_CHECK);
+      const extras = await listSuspiciousLiquidFiles(admin, themeId, alreadyChecked);
+      for (const filePath of extras) {
+        await scanOneThemeFile(admin, themeId, filePath, results);
       }
     }
   } catch (err) {
