@@ -1,12 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-# IMPORTANT: client_id is intentionally blank.
-# Run `shopify app dev --reset` from this directory in Terminal once to register
-# the app on Partners and write the real client_id here. See HANDOFF.md and
-# BLOCKERS.md for the exact command and instructions.
-client_id = ""
+client_id = "483bc0c6fa57e9b779a09a4d12f132c1"
 name = "WW Pixel Audit"
-application_url = ""
+application_url = "https://shopify.dev/apps/default-app-home"
 embedded = true
 handle = "ww-pixel-audit"
 
@@ -48,9 +44,9 @@ scopes = "read_themes,read_script_tags,write_script_tags,read_checkouts,read_ord
 
 [auth]
 redirect_urls = [
-  "/auth/callback",
-  "/auth/shopify/callback",
-  "/api/auth/callback",
+  "https://shopify.dev/apps/default-app-home/api/auth",
+  "https://shopify.dev/apps/default-app-home/auth/callback",
+  "https://shopify.dev/apps/default-app-home/auth/shopify/callback"
 ]
 
 [pos]
