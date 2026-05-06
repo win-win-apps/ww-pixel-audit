@@ -40,7 +40,9 @@ api_version = "2025-01"
 # - read_checkouts: detect legacy Additional Scripts content
 # - read_orders: revenue baseline for "estimated revenue at risk"
 # - read_analytics: future Module 3 Validator polls daily attribution
-scopes = "read_themes,read_script_tags,write_script_tags,read_checkouts,read_orders,read_analytics"
+# - read_customer_events: required to read current Web Pixel registrations
+# - write_pixels: required to call webPixelCreate / webPixelUpdate (Pro Migration Wizard)
+scopes = "read_themes,read_script_tags,write_script_tags,read_checkouts,read_orders,read_analytics,read_customer_events,write_pixels"
 
 [auth]
 redirect_urls = [

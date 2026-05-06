@@ -3,11 +3,13 @@
 
 import prisma from "../db.server";
 
+// Upsert is atomic: avoids the race where two concurrent loaders both see no row,
+// both try to insert, and the second hits a unique-constraint error on `shop`.
 export async function getOrCreateShopConfig(shop: string) {
-  const existing = await prisma.shopConfig.findUnique({ where: { shop } });
-  if (existing) return existing;
-  return prisma.shopConfig.create({
-    data: { shop },
+  return prisma.shopConfig.upsert({
+    where: { shop },
+    create: { shop },
+    update: {}, // no-op when row already exists
   });
 }
 

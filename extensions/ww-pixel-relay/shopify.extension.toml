@@ -1,0 +1,41 @@
+api_version = "2025-01"
+
+[[extensions]]
+name = "ww-pixel-relay"
+handle = "ww-pixel-relay"
+uid = "596a4505-fa23-fdf9-13b9-b40d63ca3ec42e6aeec5"
+type = "web_pixel_extension"
+runtime_context = "strict"
+
+[extensions.settings]
+type = "object"
+
+[extensions.settings.fields.metaPixelId]
+name = "metaPixelId"
+description = "Meta Pixel ID. Leave blank if not using Meta."
+type = "single_line_text_field"
+
+[extensions.settings.fields.googleAdsId]
+name = "googleAdsId"
+description = "Google Ads conversion ID, e.g. AW-12345. Leave blank if not using."
+type = "single_line_text_field"
+
+[extensions.settings.fields.googleAdsLabel]
+name = "googleAdsLabel"
+description = "Google Ads purchase conversion label. Leave blank if not using."
+type = "single_line_text_field"
+
+[extensions.settings.fields.tiktokPixelId]
+name = "tiktokPixelId"
+description = "TikTok Pixel ID. Leave blank if not using."
+type = "single_line_text_field"
+
+[extensions.settings.fields.klaviyoCompanyId]
+name = "klaviyoCompanyId"
+description = "Klaviyo Company ID (Public API Key). Leave blank if not using."
+type = "single_line_text_field"
+
+[extensions.settings.fields.pinterestTagId]
+name = "pinterestTagId"
+description = "Pinterest Tag ID. Leave blank if not using."
+type = "single_line_text_field"

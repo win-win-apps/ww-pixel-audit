@@ -33,14 +33,22 @@ model Session {
 
 // one row per shop, simple settings
 model ShopConfig {
-  id           Int       @id @default(autoincrement())
-  shop         String    @unique
-  plan         String    @default("free")
-  alertEmail   String?
-  lastScanAt   DateTime?
-  onboardedAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                Int       @id @default(autoincrement())
+  shop              String    @unique
+  plan              String    @default("free")   // "free" | "pro" | "agency"
+  subscriptionId    String?                        // gid://shopify/AppSubscription/...
+  alertEmail        String?
+  lastScanAt        DateTime?
+  onboardedAt       DateTime?
+
+  // Web Pixel install state. webPixelId is the GID returned by webPixelCreate.
+  // Settings is the JSON we passed to webPixelCreate, kept as the source of truth
+  // so the Wizard can edit it and webPixelUpdate.
+  webPixelId        String?
+  pixelSettingsJson String?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
 
 // one row per scan triggered by the merchant

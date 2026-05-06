@@ -1,0 +1,10 @@
+{
+  "name": "ww-pixel-relay",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "src/index.js",
+  "dependencies": {
+    "@shopify/web-pixels-extension": "^0.2.0"
+  }
+}

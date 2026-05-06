@@ -26,6 +26,8 @@ import prisma from "../db.server";
 import { getOrCreateShopConfig, markScanCompleted } from "../services/shop-config.server";
 import { runScan } from "../services/scanner.server";
 import { estimateRevenueAtRisk } from "../services/revenue-estimator.server";
+import { readEntitlements } from "../services/entitlements.server";
+import { hasPro, type Plan } from "../lib/plans";
 import { statusToBadgeTone, statusToLabel, sourceToLabel, type TrackerStatus, type TrackerSource } from "../lib/tracker-labels";
 import { redirectUrl } from "../services/embedded-redirect.server";
 
@@ -61,9 +63,12 @@ function formatMoney(amount: number, currency: string): string {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
   await getOrCreateShopConfig(shop);
+
+  // entitlements (also mirrors plan to ShopConfig)
+  const ent = await readEntitlements(admin, shop);
 
   // most recent completed scan
   const lastScan = await prisma.scanRun.findFirst({
@@ -76,7 +81,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
-  return json({ shop, lastScan });
+  return json({ shop, lastScan, plan: ent.plan });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -148,9 +153,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function AuditDashboard() {
-  const { shop, lastScan } = useLoaderData<typeof loader>();
+  const { shop, lastScan, plan } = useLoaderData<typeof loader>();
   const nav = useNavigation();
   const isScanning = nav.state !== "idle" && nav.formData?.get("intent") === "scan";
+  const merchantHasPro = hasPro(plan);
+  const brokenCount = lastScan?.brokenCount ?? 0;
 
   return (
     <Page title="WW Pixel Audit" subtitle={`Connected: ${shop}`}>
@@ -160,8 +167,24 @@ export default function AuditDashboard() {
           <StatusPanel
             lastScan={lastScan}
             isScanning={Boolean(isScanning)}
+            plan={plan}
           />
         </Layout.Section>
+
+        {/* Pro upsell — only when there's something to fix and merchant is on free */}
+        {!merchantHasPro && brokenCount > 0 && (
+          <Layout.Section>
+            <Banner
+              tone="info"
+              title="Pro can install the fix in one click"
+              action={{ content: "See plans", url: "/app/upgrade" }}
+            >
+              <p>
+                We can register a Custom Pixel for each of these {brokenCount} broken trackers so they keep firing after August 26. Pro starts at $29/mo with a 7-day free trial.
+              </p>
+            </Banner>
+          </Layout.Section>
+        )}
 
         {/* Always-on deadline banner */}
         <Layout.Section>
@@ -175,7 +198,7 @@ export default function AuditDashboard() {
         {/* Report table */}
         {lastScan && lastScan.trackers.length > 0 && (
           <Layout.Section>
-            <ReportTable scanId={lastScan.id} trackers={lastScan.trackers as any} />
+            <ReportTable scanId={lastScan.id} trackers={lastScan.trackers as any} hasPro={merchantHasPro} />
           </Layout.Section>
         )}
 
@@ -200,9 +223,11 @@ export default function AuditDashboard() {
 function StatusPanel({
   lastScan,
   isScanning,
+  plan,
 }: {
   lastScan: any;
   isScanning: boolean;
+  plan: Plan;
 }) {
   const broken = lastScan?.brokenCount ?? 0;
   const unknown = lastScan?.unknownCount ?? 0;
@@ -249,6 +274,9 @@ function StatusPanel({
             <InlineStack gap="200" blockAlign="center">
               <Badge tone={countdownTone}>
                 {days === 0 ? "Deadline reached" : `${days} day${days === 1 ? "" : "s"} until Aug 26`}
+              </Badge>
+              <Badge tone={plan === "free" ? undefined : "success"}>
+                {plan === "agency" ? "Agency" : plan === "pro" ? "Pro" : "Free"}
               </Badge>
             </InlineStack>
             <Form method="post">
@@ -328,6 +356,34 @@ function CountTile({
   );
 }
 
+function FixCell({
+  platform,
+  status,
+  hasPro: merchantHasPro,
+}: {
+  platform: string;
+  status: TrackerStatus;
+  hasPro: boolean;
+}) {
+  if (status !== "broken_aug_26") {
+    return <Text as="span" variant="bodySm" tone="subdued">—</Text>;
+  }
+  if (merchantHasPro) {
+    return (
+      <Button url="/app/fix" variant="primary" size="slim">
+        Fix it
+      </Button>
+    );
+  }
+  return (
+    <Tooltip content="Pro auto-installs a Custom Pixel for this tracker so it survives Aug 26.">
+      <Button url="/app/upgrade" variant="primary" size="slim" tone="success">
+        Fix with Pro
+      </Button>
+    </Tooltip>
+  );
+}
+
 function RevenueTile({
   amount,
   pct,
@@ -360,16 +416,20 @@ function RevenueTile({
   );
 }
 
-function ReportTable({ trackers, scanId }: { scanId: number; trackers: Array<{
-  id: number;
-  platform: string;
-  detectedId: string | null;
-  source: TrackerSource;
-  sourceDetail: string | null;
-  status: TrackerStatus;
-  reason: string;
-  recommendation: string | null;
-}>}) {
+function ReportTable({ trackers, scanId, hasPro: merchantHasPro }: {
+  scanId: number;
+  hasPro: boolean;
+  trackers: Array<{
+    id: number;
+    platform: string;
+    detectedId: string | null;
+    source: TrackerSource;
+    sourceDetail: string | null;
+    status: TrackerStatus;
+    reason: string;
+    recommendation: string | null;
+  }>;
+}) {
   // sort: broken first, then unknown, then safe
   const sortOrder: Record<TrackerStatus, number> = { broken_aug_26: 0, unknown: 1, safe: 2 };
   const sorted = [...trackers].sort((a, b) => {
@@ -409,6 +469,14 @@ function ReportTable({ trackers, scanId }: { scanId: number; trackers: Array<{
         )}
       </BlockStack>
     ),
+    (
+      <FixCell
+        key={`f-${t.id}`}
+        platform={t.platform}
+        status={t.status}
+        hasPro={merchantHasPro}
+      />
+    ),
   ]);
 
   return (
@@ -419,8 +487,8 @@ function ReportTable({ trackers, scanId }: { scanId: number; trackers: Array<{
           <Button url={`/api/scan/${scanId}/csv`} target="_top">Download CSV</Button>
         </InlineStack>
         <DataTable
-          columnContentTypes={["text", "text", "text", "text"]}
-          headings={["Platform", "Where it lives", "Status", "What we recommend"]}
+          columnContentTypes={["text", "text", "text", "text", "text"]}
+          headings={["Platform", "Where it lives", "Status", "What we recommend", "Action"]}
           rows={rows}
           verticalAlign="top"
         />
