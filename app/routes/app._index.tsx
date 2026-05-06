@@ -452,7 +452,13 @@ function ReportTable({ trackers, scanId, hasPro: merchantHasPro }: {
   const rows = sorted.map((t) => [
     (
       <BlockStack gap="100" key={`p-${t.id}`}>
-        <Text as="span" variant="bodyMd" fontWeight="semibold">{t.platform}</Text>
+        <Button
+          variant="plain"
+          textAlign="left"
+          onClick={() => setOpenTrackerId(t.id)}
+        >
+          {t.platform}
+        </Button>
         {t.detectedId && (
           <Text as="span" variant="bodySm" tone="subdued">ID: {t.detectedId}</Text>
         )}
