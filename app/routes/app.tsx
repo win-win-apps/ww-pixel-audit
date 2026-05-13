@@ -7,13 +7,38 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 
 import { authenticate } from "../shopify.server";
 import { getOrCreateShopConfig } from "../services/shop-config.server";
+import { readEntitlements } from "../services/entitlements.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
+// Routes that are allowed to render even when the merchant has no active
+// subscription. The upgrade route itself is the redirect target so the
+// merchant can actually go pick a plan, and upgrade/return is where Shopify
+// drops them after they pick. Excluding these prevents an infinite loop.
+const NO_PLAN_ALLOWLIST = new Set([
+  "/app/upgrade",
+  "/app/upgrade/return",
+]);
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  // make sure shop config row exists for every authenticated request
+  const { admin, session, redirect } = await authenticate.admin(request);
   await getOrCreateShopConfig(session.shop);
+
+  // Plan gate: every page in the app requires the merchant to have an active
+  // subscription (Free or Pro — Free is a real managed-pricing plan, not "no
+  // plan"). If they haven't picked one yet, top-frame redirect to Shopify's
+  // hosted plan selection page. The /app/upgrade routes are excluded so the
+  // redirect target itself stays reachable.
+  const url = new URL(request.url);
+  if (!NO_PLAN_ALLOWLIST.has(url.pathname)) {
+    const ent = await readEntitlements(admin, session.shop);
+    if (!ent.subscriptionId) {
+      const shopName = session.shop.replace(/\.myshopify\.com$/, "");
+      const pricingUrl = `https://admin.shopify.com/store/${shopName}/charges/ww-pixel-audit/pricing_plans`;
+      return redirect(pricingUrl, { target: "_top" });
+    }
+  }
+
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
