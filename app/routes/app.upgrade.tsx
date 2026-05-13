@@ -59,14 +59,19 @@ export default function UpgradePage() {
 
   return (
     <Page
-      title="Choose your plan"
+      title="Billing"
       backAction={{ content: "Audit", url: "/app" }}
       subtitle={planSubtitle(plan)}
+      primaryAction={
+        plan === "pro"
+          ? { content: "Manage subscription", onAction: handleUpgrade }
+          : undefined
+      }
     >
       <Layout>
         <Layout.Section>
           <Banner tone="info">
-            Free includes the audit forever. Pro adds the Migration Wizard that installs a Custom Pixel for each broken tracker in one click.
+            Free includes the audit forever. Pro adds the Migration Wizard that installs a Custom Pixel for each broken tracker in one click. Change or cancel any time from Shopify's hosted billing page.
           </Banner>
         </Layout.Section>
 

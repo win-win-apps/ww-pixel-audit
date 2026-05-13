@@ -26,7 +26,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function SettingsPage() {
   const { shop, plan } = useLoaderData<typeof loader>();
-  const isPro = plan === "pro" || plan === "agency";
+  const isPro = plan === "pro";
 
   return (
     <Page title="Settings" backAction={{ content: "Audit", url: "/app" }}>

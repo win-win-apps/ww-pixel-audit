@@ -5,10 +5,10 @@
 
 import type { AdminApiContext } from "@shopify/shopify-app-remix/server";
 import prisma from "../db.server";
-import { hasPro, hasAgency, type Plan } from "../lib/plans";
+import { hasPro, type Plan } from "../lib/plans";
 
 export type { Plan };
-export { hasPro, hasAgency };
+export { hasPro };
 
 export interface Entitlements {
   plan: Plan;
@@ -17,7 +17,6 @@ export interface Entitlements {
 }
 
 const PRO_NAMES = new Set(["pro", "ww pixel audit pro", "ww-pixel-audit-pro"]);
-const AGENCY_NAMES = new Set(["agency", "ww pixel audit agency", "ww-pixel-audit-agency"]);
 
 export async function readEntitlements(
   admin: AdminApiContext,
@@ -42,12 +41,6 @@ export async function readEntitlements(
     for (const s of subs) {
       if (s.status !== "ACTIVE") continue;
       const lower = String(s.name || "").toLowerCase();
-      if (AGENCY_NAMES.has(lower) || lower.includes("agency")) {
-        plan = "agency";
-        subscriptionId = String(s.id);
-        subscriptionName = String(s.name);
-        break;
-      }
       if (PRO_NAMES.has(lower) || lower.includes("pro")) {
         plan = "pro";
         subscriptionId = String(s.id);
@@ -68,4 +61,4 @@ export async function readEntitlements(
   return { plan, subscriptionId, subscriptionName };
 }
 
-// hasPro and hasAgency are re-exported from ../lib/plans.ts above.
+// hasPro is re-exported from ../lib/plans.ts above.

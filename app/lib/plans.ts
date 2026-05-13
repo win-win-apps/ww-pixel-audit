@@ -1,15 +1,15 @@
 // Pure plan metadata. Lives outside .server.ts so client routes can import it
 // for rendering pricing cards.
+//
+// We had an Agency tier at one point but removed it during the "no fake
+// features" audit pass — the daily monitoring it depended on wasn't real.
+// Plan type stays just free/pro now.
 
-export type Plan = "free" | "pro" | "agency";
-export type PlanKey = "pro" | "agency";
+export type Plan = "free" | "pro";
+export type PlanKey = "pro";
 
 export function hasPro(plan: Plan): boolean {
-  return plan === "pro" || plan === "agency";
-}
-
-export function hasAgency(plan: Plan): boolean {
-  return plan === "agency";
+  return plan === "pro";
 }
 
 export interface PlanDef {
@@ -28,13 +28,6 @@ export const PLANS: Record<PlanKey, PlanDef> = {
     key: "pro",
     name: "WW Pixel Audit Pro",
     amount: 29,
-    currency: "USD",
-    trialDays: 0,
-  },
-  agency: {
-    key: "agency",
-    name: "WW Pixel Audit Agency",
-    amount: 79,
     currency: "USD",
     trialDays: 0,
   },

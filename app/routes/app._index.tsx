@@ -280,7 +280,7 @@ function StatusPanel({
                 {days === 0 ? "Deadline reached" : `${days} day${days === 1 ? "" : "s"} until Aug 26`}
               </Badge>
               <Badge tone={plan === "free" ? undefined : "success"}>
-                {plan === "agency" ? "Agency" : plan === "pro" ? "Pro" : "Free"}
+                {plan === "pro" ? "Pro" : "Free"}
               </Badge>
             </InlineStack>
             <Form method="post">
